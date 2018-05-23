@@ -18,7 +18,7 @@ def alstm_cell(input, hidden, adapt, weights, bias=None):
     """The adaptive LSTM Cell for one time step."""
     hx, cx = hidden
 
-    hidden_size, input_size = hidden.size(1), input.size(1)
+    hidden_size, input_size = hx.size(1), input.size(1)
     chunks = [input_size + hidden_size, 8 * hidden_size]
     if bias is not None:
         chunks.append(4 * hidden_size)
@@ -83,15 +83,16 @@ class aLSTMCell(nn.modules.rnn.RNNCellBase):
 class aLSTM(nn.Module):
 
     def __init__(self, input_size, hidden_size, adapt_size, output_size=None,
-                 nlayers=1, dropout_hidden=None, dropout_adapt=None,
+                 nlayers=1, dropout_alstm=None, dropout_adapt=None,
                  batch_first=False, bias=True):
         super(aLSTM, self).__init__()
+        output_size = output_size if output_size is not None else hidden_size
         self.input_size = input_size
         self.hidden_size = hidden_size
         self.adapt_size = adapt_size
-        self.output_size = output_size if output_size else hidden_size
+        self.output_size = output_size
         self.nlayers = nlayers
-        self.dropout_hidden = dropout_hidden
+        self.dropout_alstm = dropout_alstm
         self.dropout_adapt = dropout_adapt
         self.batch_first = batch_first
         self.bias = bias
@@ -131,20 +132,12 @@ class aLSTM(nn.Module):
 
         if hidden is None:
             hidden = self.init_hidden(input.size(1))
-
         hidden = convert(hidden, list)
 
-        adaptive_hidden, alstm_hidden = hidden
+        adapt_hidden, alstm_hidden = hidden
 
-        dropout = False
-        if self.training and self.dropout:
-            dropout = True
-            lsz = [h[0].size() for h in alstm_hidden]
-            asz = [h[0].size() for h in adaptive_hidden]
-            dropout_alstm = VariationalDropout(
-                input.data, self.dropout_hidden, lsz)
-            dropout_adaptive = VariationalDropout(
-                input.data, self.dropout_adaptive, asz)
+        dropout_alstm = self._dropout(input.data, alstm_hidden, self.dropout_alstm)
+        dropout_adapt = self._dropout(input.data, adapt_hidden, self.dropout_adapt)
 
         output = []
         for x in input:
@@ -152,38 +145,31 @@ class aLSTM(nn.Module):
                 alyr = self.adapt_layers[l]
                 elyr = self.project_layers[l]
                 flyr = self.alstm_layers[l]
-                ahx, ahc = adaptive_hidden[l]
+                ahx, ahc = adapt_hidden[l]
                 fhx, fhc = alstm_hidden[l]
 
                 if self.nlayers != 1:
-                    ax = torch.cat([x, fhx, adaptive_hidden[l-1][0]], 1)
+                    ax = torch.cat([x, fhx, adapt_hidden[l-1][0]], 1)
                 else:
                     ax = torch.cat([x, fhx], 1)
 
                 ahx, ahc = alyr(ax, (ahx, ahc))
+                ahx = dropout_adapt(ahx, l)
+                ahe = elyr(ahx)
 
-                if dropout:
-                    ahx = dropout_adaptive(ahx, l)
-                    ax = ahx
-                else:
-                    ax = ahx
-
-                ahe = elyr(ax)
                 fhx, fhc = flyr(x, (fhx, fhc), ahe)
-
                 if l == self.nlayers - 1:
                     output.append(fhx)
 
-                if dropout:
-                    fhx = dropout_alstm(fhx, l)
+                fhx = dropout_alstm(fhx, l)
 
-                adaptive_hidden[l] = [ahx, ahc]
+                adapt_hidden[l] = [ahx, ahc]
                 alstm_hidden[l] = [fhx, fhc]
 
                 x = fhx
             ###
         ###
-        hidden = (adaptive_hidden, alstm_hidden)
+        hidden = (adapt_hidden, alstm_hidden)
         output = torch.stack(output, 1 if self.batch_first else 0)
 
         hidden = convert(hidden, tuple)
@@ -204,3 +190,9 @@ class aLSTM(nn.Module):
                hidden(hsz if l != self.nlayers - 1 else osz))
               for l in range(self.nlayers)]
         return ah, fh
+
+    def _dropout(self, data_source, hiddens, dropout_rates):
+        if self.training and dropout_rates:
+            msz = [h[0].size() for h in hiddens]
+            return VariationalDropout(data_source, dropout_rates, msz)
+        return lambda x, l: x
