@@ -14,23 +14,24 @@ from .utils import Project, VariationalDropout, chunk, convert
 # pylint: disable=too-many-locals,too-many-arguments,redefined-builtin
 
 
-def alstm_cell(input, hidden, adapt, weights, bias=None):
+def alstm_cell(input, hidden, adapt, weight_ih, weight_hh, bias=None):
     """The adaptive LSTM Cell for one time step."""
     hx, cx = hidden
 
     hidden_size, input_size = hx.size(1), input.size(1)
-    chunks = [input_size + hidden_size, 8 * hidden_size]
+    chunks = [input_size, hidden_size, 4 * hidden_size, 4 * hidden_size]
     if bias is not None:
         chunks.append(4 * hidden_size)
 
     adapt = chunk(adapt, chunks, 1)
 
-    input = torch.cat([input, hx], 1) * adapt.pop(0)
-    gates = F.linear(input, weights) * adapt.pop(0)
+    input = input * adapt.pop(0)
+    hx = hx * adapt.pop(0)
+    igates = F.linear(input, weight_ih) * adapt.pop(0)
+    hgates = F.linear(hx, weight_hh) * adapt.pop(0)
 
-    igates, hgates = gates.chunk(2, 1)
     if bias is not None:
-        hgates = hgates + bias * adapt.pop(0)
+        igates = igates + bias * adapt.pop(0)
 
     if input.is_cuda:
         state = fusedBackend.LSTMFused.apply
@@ -60,7 +61,8 @@ class aLSTMCell(nn.modules.rnn.RNNCellBase):
         self.input_size = input_size
         self.hidden_size = hidden_size
         self.use_bias = use_bias
-        self.weights = Parameter(torch.Tensor(8 * hidden_size, hidden_size + input_size))
+        self.weight_ih = Parameter(torch.Tensor(4 * hidden_size, input_size))
+        self.weight_hh = Parameter(torch.Tensor(4 * hidden_size, hidden_size))
         if use_bias:
             self.bias = Parameter(torch.Tensor(4 * hidden_size))
         else:
@@ -69,7 +71,8 @@ class aLSTMCell(nn.modules.rnn.RNNCellBase):
 
     def reset_parameters(self):
         """Initialization of parameters"""
-        nn.init.orthogonal(self.weights)
+        nn.init.orthogonal(self.weight_ih)
+        nn.init.orthogonal(self.weight_hh)
         if self.use_bias:
             self.bias.data.zero_()
             # Forget gate bias initialization
@@ -77,7 +80,7 @@ class aLSTMCell(nn.modules.rnn.RNNCellBase):
 
     def forward(self, input, hx, adapt):
         """Run aLSTM for one time step with given input and policy"""
-        return alstm_cell(input, hx, adapt, self.weights, self.bias)
+        return alstm_cell(input, hx, adapt, self.weight_ih, self.weight_hh, self.bias)
 
 
 class aLSTM(nn.Module):
@@ -101,9 +104,10 @@ class aLSTM(nn.Module):
         for l in range(nlayers):
             if l == 0:
                 ninp, nhid = input_size, hidden_size
-
-            if l == nlayers - 1:
+            elif l == nlayers - 1:
                 ninp, nhid = hidden_size, output_size
+            else:
+                ninp, nhid = hidden_size, hidden_size
             if nlayers == 1:
                 ninp, nhid = input_size, output_size
 
