@@ -26,6 +26,8 @@ class VariationalDropout(object):
     """
 
     def __init__(self, tensor, dropouts, sizes):
+        if isinstance(dropouts, (float, int)):
+            dropouts = [dropouts] * len(sizes)
         masks = []
         for p, size in zip(dropouts, sizes):
             mask = tensor.new(*size).bernoulli_(1 - p) / (1 - p)
