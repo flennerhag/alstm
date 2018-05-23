@@ -7,6 +7,5 @@ setup(
     author_email='sebastianflennerhag@hotmail.com',
     url='https://github.com/flennerhag/alstm',
     version='0.0.1',
-    packages=['torch'],
     license='BSD 3-Clause License'
 )
