@@ -95,8 +95,10 @@ class aLSTMCell(nn.modules.rnn.RNNCellBase):
 
     def reset_parameters(self):
         """Initialization of parameters"""
-        nn.init.orthogonal(self.weight_ih)
-        nn.init.orthogonal(self.weight_hh)
+        # Hack for handling PyTorch v4 moving to orthogonal_
+        f = getattr(torch.nn.init, 'orthogonal_', torch.nn.init.orthogonal)
+        f(self.weight_ih)
+        f(self.weight_hh)
         if self.use_bias:
             self.bias.data.zero_()
             # Forget gate bias initialization
