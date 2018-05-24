@@ -1,7 +1,7 @@
 # Adaptive LSTM for Language Modeling 
 
-This repo replicates the experiments in the original paper ([https://arxiv.org/abs/1805.08574](https://arxiv.org/abs/1805.08574)). The training code base is derive from
-[https://github.com/salesforce/awd-lstm-lm](https://github.com/salesforce/awd-lstm-lm).
+These examples replicate the experiments in the original paper ([https://arxiv.org/abs/1805.08574](https://arxiv.org/abs/1805.08574)). The training code base is derived from
+[https://github.com/salesforce/awd-lstm-lm](https://github.com/salesforce/awd-lstm-lm), in turn derived from the official PyTorch language model [example](https://github.com/pytorch/examples/tree/master/word_language_model).
 
 ## Setup
 
@@ -21,7 +21,7 @@ To train the aLSTM on Penn Treebank, run
 python main.py --model ALSTM --epochs 190 --emsize 400 --nhid 1150 --nlayers 2 --npar 100 --dropouth 0.25 --dropoute 0.16 --dropouti 0.6 --dropouto 0.6 --dropouta 0.1 --wdecay 1e-6 --device 1 --var-seq --seq-len 70 --batch_size 20 --cut-steps 100 160 --cut-rate 10 --save
 ```
 
-This will give you val / test scores of ``58.7`` / ``56.6``.
+This will give you val / test scores of ``58.7`` / ``56.5``.
 
 ### Wikitext-2
 

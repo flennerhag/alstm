@@ -35,16 +35,14 @@ This implementation follows the LSTM implementation in the official (and constan
 module wrapper. These apply to a given time step. The ``aLSTM`` class provides an end-user API with 
 variational dropout and our hybrid RHN-LSTM adaptation model for multi-layer aLSTMs.  
 
-Use the these classes as you would the equivalent PyTorch LSTM object. For instance: 
-
 ```python
 import torch
 from torch.autograd import Variable
 from alstm import aLSTM
 
-seq_len, batch_size, input_size, hidden_size, adapt_size = 20, 5, 8, 10, 3
+seq_len, batch_size, input_size, hidden_size, adapt_size, output_size, = 20, 5, 8, 10, 3, 7
 
-alstm = aLSTM(input_size, hidden_size, adapt_size)
+alstm = aLSTM(input_size, hidden_size, adapt_size, output_size, nlayers=2)
 
 X = Variable(torch.rand(seq_len, batch_size, hidden_size))
 out, hidden = alstm(X) 

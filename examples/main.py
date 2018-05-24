@@ -45,7 +45,7 @@ parser.add_argument(
     '--cut-steps', type=int, nargs='+', default=[100, 180], help='learning rate cut epochs'
 )
 parser.add_argument(
-    '--clip', type=float, default=0, help='gradient clipping'
+    '--clip', type=float, default=5, help='gradient clipping'
 )
 parser.add_argument(
     '--epochs', type=int, default=200, help='upper epoch limit'
