@@ -4,7 +4,7 @@ This repo replicates the experiments in the original paper ([https://arxiv.org/a
 [https://github.com/salesforce/awd-lstm-lm](https://github.com/salesforce/awd-lstm-lm).
 
 <div align="center">
-<img src="examples/validation-curve.jpg" width="100%"><br><br>
+<img src="valcurve.jpg" width="100%"><br><br>
 </div>
 <hr>
 
