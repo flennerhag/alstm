@@ -78,6 +78,30 @@ def chunk(tensor, sizes, dim=0):
     return [tensor.narrow(dim, sizes[i], sizes[i+1]) for i in range(nsizes)]
 
 
+def get_sizes(input_size, hidden_size, output_size, layer_idx, nlayers):
+    """Get the input and hidden size for a layer"""
+    if nlayers == 1:
+        return input_size, output_size
+    if layer_idx == 0:
+        return input_size, hidden_size
+    if layer_idx == nlayers - 1:
+        return hidden_size, output_size
+    return hidden_size, hidden_size
+
+
+def init_hidden(data_source, bsz, asz, osz, hsz, nlayers):
+    """Utility for initializing a stack of hidden state tuples"""
+
+    def hidden(out):
+        return Variable(data_source.new(bsz, out).zero_())
+
+    ah = [(hidden(asz), hidden(asz)) for _ in range(nlayers)]
+    fh = [(hidden(hsz if l != nlayers - 1 else osz),
+           hidden(hsz if l != nlayers - 1 else osz))
+          for l in range(nlayers)]
+    return ah, fh
+
+
 def convert(hiddens, fmt):
     """Convert the inner format of a nested list of lists or tuples"""
     return tuple([fmt(h) for h in h_list] for h_list in hiddens)

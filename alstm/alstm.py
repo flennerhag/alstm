@@ -9,13 +9,30 @@ from torch.nn import Parameter
 from torch.autograd import Variable
 from torch.nn._functions.thnn import rnnFusedPointwise as fusedBackend
 
-from .utils import Project, VariationalDropout, chunk, convert
+from .utils import Project, VariationalDropout, chunk, convert, get_sizes, init_hidden
 
-# pylint: disable=too-many-locals,too-many-arguments,redefined-builtin
+# pylint: disable=too-many-locals,too-many-arguments,too-many-instance-attributes,redefined-builtin
 
 
-def alstm_cell(input, hidden, adapt, weight_ih, weight_hh, bias=None):
-    """The adaptive LSTM Cell for one time step."""
+def alstm_cell(input, hidden, policy, weight_ih, weight_hh, bias=None):
+    r"""Update hidden state for an aLSTM at given time step:
+
+    :math:`h_t, c_t = \operatorname{alstm}_{\theta}(x_t, h_{t-1}, \pi_t)`.
+
+    Args:
+        input (Tensor): Batch of inputs [batch_size, input_size]
+        hidden (Tensor): Tuple of hidden states [batch_size, hidden_size]
+        policy (Tensor): Batch of adaptation values [batch_size, *]
+            where * = input_size + 9 * hidden_size if no bias else
+            input_size + 13 * hidden_size
+        weight_ih (Tensor): Input projection [4 * hidden_size, input_size]
+        weight_hh (Tensor): Hidden projection [4 * hidden_size, hidden_size]
+        bias (Tensor): Bias (optional) [4 * hidden_size]
+
+    Returns:
+        hy (Tensor): hidden state
+        cy (Tensor): memory state
+    """
     hx, cx = hidden
 
     hidden_size, input_size = hx.size(1), input.size(1)
@@ -23,15 +40,15 @@ def alstm_cell(input, hidden, adapt, weight_ih, weight_hh, bias=None):
     if bias is not None:
         chunks.append(4 * hidden_size)
 
-    adapt = chunk(adapt, chunks, 1)
+    policy = chunk(policy, chunks, 1)
 
-    input = input * adapt.pop(0)
-    hx = hx * adapt.pop(0)
-    igates = F.linear(input, weight_ih) * adapt.pop(0)
-    hgates = F.linear(hx, weight_hh) * adapt.pop(0)
+    input = input * policy.pop(0)
+    hx = hx * policy.pop(0)
+    igates = F.linear(input, weight_ih) * policy.pop(0)
+    hgates = F.linear(hx, weight_hh) * policy.pop(0)
 
     if bias is not None:
-        igates = igates + bias * adapt.pop(0)
+        igates = igates + bias * policy.pop(0)
 
     if input.is_cuda:
         state = fusedBackend.LSTMFused.apply
@@ -53,7 +70,14 @@ def alstm_cell(input, hidden, adapt, weight_ih, weight_hh, bias=None):
 
 class aLSTMCell(nn.modules.rnn.RNNCellBase):
 
-    """Adaptive LSTM Cell
+    r"""Module wrapper around aLSTM cell:
+
+    :math:`h_t, c_t = \operatorname{alstm}_{\theta}(x_t, h_{t-1}, \pi_t)`.
+
+    Args:
+        input_size (int): dimensionality of input
+        hidden_size (int): dimensionality of hidden state
+        use_bias (bool): apply bias
     """
 
     def __init__(self, input_size, hidden_size, use_bias=True):
@@ -78,12 +102,51 @@ class aLSTMCell(nn.modules.rnn.RNNCellBase):
             # Forget gate bias initialization
             self.bias.data[self.hidden_size:2*self.hidden_size] += 1
 
-    def forward(self, input, hx, adapt):
-        """Run aLSTM for one time step with given input and policy"""
-        return alstm_cell(input, hx, adapt, self.weight_ih, self.weight_hh, self.bias)
+    def forward(self, input, hx, policy):
+        r"""Update hidden state for given time step:
+
+        :math:`h_t, c_t = \operatorname{alstm}_{\theta}(x_t, h_{t-1}, \pi_t)`.
+
+        Args:
+            input (Tensor): Batch of inputs [batch_size, input_size]
+            hx (Tensor): Tuple of hidden states [batch_size, hidden_size]
+            policy (Tensor): Batch of adaptation values [batch_size, *]
+                where * = input_size + 9 * hidden_size if no bias else
+                input_size + 13 * hidden_size
+        """
+        return alstm_cell(
+            input, hx, policy, self.weight_ih, self.weight_hh, self.bias)
 
 
 class aLSTM(nn.Module):
+
+    r"""aLSTM model
+
+    Model for processing a batch of sequence inputs over a
+    potentially deep aLSTM. The :class:`aLSTM` provides a unified
+    framework for the aLSTM in https://arxiv.org/abs/1805.08574. It
+    uses variational dropout and hybrid RHN-LSTM adaptation when the
+    model has more than one layer.
+
+    Args:
+        input_size (int): dimensionality of input
+        hidden_size (int): dimensionality of hidden state
+        adapt_size (int): dimensionality of latent adaptation variable
+        output_size (int): dimensionality of hidden state in final layer (optional)
+        nlayers (int): number of layers (default: 1)
+        dropout_alstm (int): drop probability for aLSTM hidden state (optional)
+        dropout_adapt (int): drop probability for adaptive latent variable (optional)
+        batch_first (int): whether batches are along first dimension (default: False)
+        bias (bool): whether to use a bias (default: True)
+
+    Input:
+        input (Tensor): Batch of sequences [batch_size, max_seq_len, input_size]
+        hidden (Tensor): Two lists of hidden state tuples (optional) [batch_size, hidden_size]
+
+    Returns:
+        output (Tensor): Batch of sequences [batch_size, max_seq_len, output_size]
+        hidden (Tensor): Two lists of hidden state tuples [batch_size, hidden_size]
+    """
 
     def __init__(self, input_size, hidden_size, adapt_size, output_size=None,
                  nlayers=1, dropout_alstm=None, dropout_adapt=None,
@@ -102,14 +165,8 @@ class aLSTM(nn.Module):
 
         psz, alyr, elyr, flyr = [], [], [], []
         for l in range(nlayers):
-            if l == 0:
-                ninp, nhid = input_size, hidden_size
-            elif l == nlayers - 1:
-                ninp, nhid = hidden_size, output_size
-            else:
-                ninp, nhid = hidden_size, hidden_size
-            if nlayers == 1:
-                ninp, nhid = input_size, output_size
+            ninp, nhid = get_sizes(
+                input_size, hidden_size, output_size, l, nlayers)
 
             # policy latent variable
             ain = adapt_size + ninp + nhid if nlayers != 1 else ninp + nhid
@@ -130,7 +187,12 @@ class aLSTM(nn.Module):
         self.policy_sizes = psz
 
     def forward(self, input, hidden=None):
-        """run aLSTM over a batch of sequences."""
+        """Run aLSTM over a batch of input sequences
+
+        Args:
+            input (Tensor): Batch of inputs [batch_size, max_seq_len, input_size]
+            hidden (Tensor): Two lists of hidden state tuples (optional) [batch_size, hidden_size]
+        """
         if self.batch_first:
             input = input.transpose(0, 1)
 
@@ -140,8 +202,8 @@ class aLSTM(nn.Module):
 
         adapt_hidden, alstm_hidden = hidden
 
-        dropout_alstm = self._dropout(input.data, alstm_hidden, self.dropout_alstm)
-        dropout_adapt = self._dropout(input.data, adapt_hidden, self.dropout_adapt)
+        dropout_alstm = self._dropout(alstm_hidden, self.dropout_alstm)
+        dropout_adapt = self._dropout(adapt_hidden, self.dropout_adapt)
 
         output = []
         for x in input:
@@ -184,18 +246,11 @@ class aLSTM(nn.Module):
         asz = self.adapt_size
         osz = self.output_size
         hsz = self.hidden_size
-        weight = next(self.parameters()).data
+        data_source = next(self.parameters()).data
+        return init_hidden(data_source, bsz, asz, osz, hsz, self.nlayers)
 
-        def hidden(out):
-            return Variable(weight.new(bsz, out).zero_())
-
-        ah = [(hidden(asz), hidden(asz)) for _ in range(self.nlayers)]
-        fh = [(hidden(hsz if l != self.nlayers - 1 else osz),
-               hidden(hsz if l != self.nlayers - 1 else osz))
-              for l in range(self.nlayers)]
-        return ah, fh
-
-    def _dropout(self, data_source, hiddens, dropout_rates):
+    def _dropout(self, hiddens, dropout_rates):
+        data_source = next(self.parameters()).data
         if self.training and dropout_rates:
             msz = [h[0].size() for h in hiddens]
             return VariationalDropout(data_source, dropout_rates, msz)

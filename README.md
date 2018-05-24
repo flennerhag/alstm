@@ -4,11 +4,11 @@
 
 aLSTM is an extension of the standard LSTM that implements adaptive parameterization. 
 Adaptive parameterization increases model flexibility given a parameter budget, allowing
-more flexible and statistically efficient models. The aLSTM typically converges faster
-than the LSTM and reaches better generalizing performance. It also very stable; no need to
+more flexible and statistically efficient models. The aLSTM converges faster
+than the LSTM and reaches better generalizing performance. It is also very stable; no need to
 use gradient clipping, even for sequences of up to thousands of terms. 
  
-If you use this code in research or our results in your research, please cite
+If you use this code or our results in your research, please cite
 
 ```
 @article{Flennerhag:2018alstm,
@@ -21,7 +21,7 @@ If you use this code in research or our results in your research, please cite
 
 ## Requirements
 
-This codebase should run on any [PyTorch](https://pytorch.org/) version, but has been tested for v2–v4. To install:
+This implementation should run on any [PyTorch](https://pytorch.org/) version. It has been tested for v2–v4. To install:
 
 ```bash
 git clone https://github.com/flennerhag/alstm; cd alstm
@@ -30,19 +30,21 @@ python setup.py install
 
 ## Usage
 
-This implementation follows the official LSTM implementation in the official (and constantly changing) 
-[PyTorch repo](https://github.com/pytorch/pytorch). We expose an ``alstm_cell`` function and its ``aLSTMCell``
-module wrapper. These apply to a given time step. The ``aLSTM`` class is the primary object. To run the aLSTM,
-use it as you would the ``LSTM`` class:
+This implementation follows the LSTM implementation in the official (and constantly changing) 
+[PyTorch repo](https://github.com/pytorch/pytorch). You have an ``alstm_cell`` function and its ``aLSTMCell``
+module wrapper. These apply to a given time step. The ``aLSTM`` class provides an end-user API with 
+variational dropout and our hybrid RHN-LSTM adaptation model for multi-layer aLSTMs.  
+
+Use the these classes as you would the equivalent PyTorch LSTM object. For instance: 
 
 ```python
 import torch
 from torch.autograd import Variable
 from alstm import aLSTM
 
-seq_len, batch_size, hidden_size, adapt_size = 20, 5, 10, 3
+seq_len, batch_size, input_size, hidden_size, adapt_size = 20, 5, 8, 10, 3
 
-alstm = aLSTM(hidden_size, hidden_size, adapt_size)
+alstm = aLSTM(input_size, hidden_size, adapt_size)
 
 X = Variable(torch.rand(seq_len, batch_size, hidden_size))
 out, hidden = alstm(X) 
