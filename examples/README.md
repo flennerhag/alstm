@@ -3,11 +3,6 @@
 This repo replicates the experiments in the original paper ([https://arxiv.org/abs/1805.08574](https://arxiv.org/abs/1805.08574)). The training code base is derive from
 [https://github.com/salesforce/awd-lstm-lm](https://github.com/salesforce/awd-lstm-lm).
 
-<div align="center">
-<img src="examples/validation-curve.jpg" width="100%"><br><br>
-</div>
-<hr>
-
 ## Setup
 
 Install [PyTorch](https://pytorch.org/) and [alstm](https://github.com/flennerhag/alstm). Create ``log`` and ``checkpoints`` directory in the root of the ``examples`` directory:
@@ -45,4 +40,12 @@ python main.py --model ALSTM --epochs 190 --emsize 400 --nhid 1500 --nlayers 2 -
 This will give you val / test scores of ``67.7`` / ``64.8``.
 
 The API for these language models is the same as that of the [AWD-LSTM](https://github.com/salesforce/awd-lstm-lm), so you can use any post-processing scripts they have if you want to fine tune, add a [neural cache](https://arxiv.org/abs/1612.04426) or generate samples. 
+
+## Benchmark
+
+<div align="center">
+<img src="valcurve.jpg" width="80%"><br><br>
+</div>
+<hr>
+
 
