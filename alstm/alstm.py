@@ -186,12 +186,19 @@ class aLSTM(nn.Module):
         self.alstm_layers = nn.ModuleList(flyr)
         self.policy_sizes = psz
 
-    def forward(self, input, hidden=None):
+    def forward(self, input, hidden=None, return_all=False):
         """Run aLSTM over a batch of input sequences
 
         Args:
             input (Tensor): Batch of inputs [batch_size, max_seq_len, input_size]
             hidden (Tensor): Two lists of hidden state tuples (optional) [batch_size, hidden_size]
+            return_all (Bool): whether to return also outputs (incl. non-dropped) from all layers
+
+        Returns:
+            output (Tensor): Batch of sequences [batch_size, max_seq_len, output_size]
+            hidden (Tensor): Two lists of hidden state tuples [batch_size, hidden_size]
+            raw_outputs (Tensor): all non-dropped hidden states from all layers
+            all_outputs (Tensor): all dropped hidden states from all layers
         """
         if self.batch_first:
             input = input.transpose(0, 1)
@@ -205,7 +212,7 @@ class aLSTM(nn.Module):
         dropout_alstm = self._dropout(alstm_hidden, self.dropout_alstm)
         dropout_adapt = self._dropout(adapt_hidden, self.dropout_adapt)
 
-        output = []
+        output, output_all, output_all_raw = [], [], []
         for x in input:
             for l in range(self.nlayers):
                 alyr = self.adapt_layers[l]
@@ -223,11 +230,15 @@ class aLSTM(nn.Module):
                 ahx = dropout_adapt(ahx, l)
                 ahe = elyr(ahx)
 
-                fhx, fhc = flyr(x, (fhx, fhc), ahe)
+                fhx_nd, fhc = flyr(x, (fhx, fhc), ahe)
                 if l == self.nlayers - 1:
-                    output.append(fhx)
+                    output.append(fhx_nd)
 
-                fhx = dropout_alstm(fhx, l)
+                fhx = dropout_alstm(fhx_nd, l)
+
+                if return_all:
+                    output_all_raw.append(fhx_nd)
+                    output_all.append(fhx)
 
                 adapt_hidden[l] = [ahx, ahc]
                 alstm_hidden[l] = [fhx, fhc]
@@ -239,6 +250,8 @@ class aLSTM(nn.Module):
         output = torch.stack(output, 1 if self.batch_first else 0)
 
         hidden = convert(hidden, tuple)
+        if return_all:
+            return output, hidden, output_all, output_all_raw
         return output, hidden
 
     def init_hidden(self, bsz):
