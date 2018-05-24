@@ -52,13 +52,13 @@ out, hidden = alstm(X)
 
 ## Examples
 
-To replicate the original experiments of the [aLSTM paper](https://arxiv.org/abs/1805.08574) head to 
-[https://github.com/flennerhag/adaptive_parameterization](https://github.com/flennerhag/adaptive_parameterization).
+To replicate the original experiments of the [aLSTM paper](https://arxiv.org/abs/1805.08574) see 
+[examples](https://github.com/flennerhag/alstm/tree/master/examples).
 
 ## Contributions
 
 If you spot a bug, think the docs are useless or have an idea for an extension, don't hesitate to send a PR! 
-If your contribution is substantial, please raise an issue first to check that your idea is in line with the 
+If your contribution is substantial, please raise an issue first to check that it is in line with the 
 scope of this repo.  Quick wins that would be great to have are:
 
 - Support for bidirectional aLSTM
