@@ -18,7 +18,7 @@ getdata.sh -pw
 To train the aLSTM on Penn Treebank, run
 
 ```bash
-python main.py --model ALSTM --epochs 190 --emsize 400 --nhid 1150 --nlayers 2 --npar 100 --dropouth 0.25 --dropoute 0.16 --dropouti 0.6 --dropouto 0.6 --dropouta 0.1 --wdecay 1e-6 --device 1 --var-seq --seq-len 70 --batch_size 20 --cut-steps 100 160 --cut-rate 10 --save
+python main.py --model ALSTM --epochs 190 --emsize 400 --nhid 1150 --nlayers 2 --npar 100 --dropouth 0.25 --dropoute 0.16 --dropouti 0.6 --dropouto 0.6 --dropouta 0.1 --wdecay 1e-6 --var-seq --seq-len 70 --batch_size 20 --cut-steps 100 160 --cut-rate 10 --save
 ```
 
 This will give you val / test scores of ``58.7`` / ``56.5``.
@@ -28,7 +28,7 @@ This will give you val / test scores of ``58.7`` / ``56.5``.
 To train the aLSTM on Wikitext-2, run
 
 ```bash
-python main.py --model ALSTM --epochs 250 --emsize 400 --nhid 1500 --nlayers 2 --npar 100 --dropouth 0.3 --dropoute 0.16 --dropouti 0.6 --dropouto 0.6 --dropouta 0.1 --wdecay 1e-6 --device 1 --var-seq --seq-len 70 --batch_size 20 --cut-steps 80 160 200 --cut-rate 10 --save --data data/wikitext-2
+python main.py --model ALSTM --epochs 250 --emsize 400 --nhid 1500 --nlayers 2 --npar 100 --dropouth 0.3 --dropoute 0.16 --dropouti 0.6 --dropouto 0.6 --dropouta 0.1 --wdecay 1e-6 --var-seq --seq-len 70 --batch_size 20 --cut-steps 80 160 200 --cut-rate 10 --save --data data/wikitext-2
 ```
 
 This will give you val / test scores of ``67.7`` / ``64.8``.
