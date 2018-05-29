@@ -345,34 +345,32 @@ def train():
 
 
 if __name__ == '__main__':
+    try:
+        total_params = sum(
+            x.size()[0] * x.size()[1] if len(x.size()) > 1 else
+            x.size()[0] for x in model.parameters())
+        args.params = total_params
+        logger.info(args)
 
-    total_params = sum(
-        x.size()[0] * x.size()[1] if len(x.size()) > 1 else
-        x.size()[0] for x in model.parameters())
-    args.params = total_params
-    logger.info(args)
+        lr = args.lr
+        stored_loss = np.inf if not args.resume else args.resume[2]
+        epochs = range(1, args.epochs + 1) if not args.resume else range(1 + args.resume[1], 1 + args.epochs - args.resume[1])
+        for epoch in epochs:
+            epoch_start_time = time.time()
+            train()
+            val_loss = evaluate(model, val_data, eval_batch_size)
+            logger.info(
+                'VAL | epoch {:3d} | time: {:5.2f}s | loss {:5.2f} | ppl {:8.2f}'.format(
+                    epoch, (time.time() - epoch_start_time), val_loss, ppl(val_loss))
+            )
+            if val_loss < stored_loss:
+                with open(ckpt_path, 'wb') as f:
+                    torch.save([model, optimizer], f)
+                    stored_loss = val_loss
 
-    lr = args.lr
-    stored_loss = np.inf if not args.resume else args.resume[2]
-    epochs = range(1, args.epochs + 1) if not args.resume else range(1 + args.resume[1], 1 + args.resume[1] + args.epochs)
-    strikes = 0
-    for epoch in epochs:
-        epoch_start_time = time.time()
-        train()
-        val_loss = evaluate(model, val_data, eval_batch_size)
-        logger.info(
-            'VAL | epoch {:3d} | time: {:5.2f}s | loss {:5.2f} '
-            '| ppl {:8.2f}'.format(
-                epoch, (time.time() - epoch_start_time), val_loss,
-                ppl(val_loss)))
-
-        if val_loss < stored_loss:
-            with open(ckpt_path, 'wb') as f:
-                torch.save([model, optimizer], f)
-                stored_loss = val_loss
-
-        if args.cut_steps and epoch % args.cut_steps[0] == 0:
-            args.cut_steps.pop(0)
-            optimizer.param_groups[0]['lr'] /= args.cut_rate
-
+            if args.cut_steps and epoch % args.cut_steps[0] == 0:
+                args.cut_steps.pop(0)
+                optimizer.param_groups[0]['lr'] /= args.cut_rate
+    except KeyboardInterrupt as excp:
+        print("Training stopped.")
     test()
