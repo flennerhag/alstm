@@ -14,12 +14,13 @@ import model as model
 
 from utils import batchify, get_batch, repackage_hidden, ppl
 
+
 ###############################################################################
 parser = argparse.ArgumentParser(
     description='PyTorch Language Model Training Script'
 )
-
 ###############################################################################
+
 parser.add_argument(
     '--model', type=str, default='ALSTM', help='type of recurrent net'
 )
@@ -108,7 +109,6 @@ parser.add_argument(
     '--data', type=str, default='./data/penn', help='path to data root directory'
 )
 
-
 args = parser.parse_args()
 
 if args.resume:
@@ -125,6 +125,64 @@ if torch.cuda.is_available():
     else:
         torch.cuda.set_device(args.device)
         torch.cuda.manual_seed(args.seed)
+
+###############################################################################
+# Data
+###############################################################################
+corpus = data.Corpus(args.data)
+
+eval_batch_size = 10
+test_batch_size = 1
+train_data = batchify(corpus.train, args.batch_size, args)
+val_data = batchify(corpus.valid, eval_batch_size, args)
+test_data = batchify(corpus.test, test_batch_size, args)
+
+###############################################################################
+# Model
+###############################################################################
+
+args.ntokens = ntokens = len(corpus.dictionary)
+
+if args.resume:
+
+    def load_params():
+        print('Loading saved model (%s)...' % args.resume[0], end='')
+        global model, optimizer
+
+        model, optimizer = torch.load(args.resume[0])
+
+        if model.rnn_type == 'LSTM':
+            model.rnns.flatten_parameters()
+
+        for d in ['e', 'i', 'h', 'a', 'o']:
+            drp = getattr(args, 'dropout' + d)
+            setattr(model, 'dropout' + d, drp)
+
+        if model.rnn_type == 'ALSTM':
+            setattr(model.rnns, 'dropout_alstm', args.dropouth)
+            setattr(model.rnns, 'dropout_adapt', args.dropouta)
+
+        optimizer.param_groups[0]['lr'] = args.lr
+        optimizer.param_groups[0]['weight_decay'] = args.wdecay
+        print('done')
+
+    load_params()
+
+else:
+    model = model.get_model(args)
+    optimizer = torch.optim.Adam(
+        model.parameters(), lr=args.lr, betas=(0., 0.999),
+        eps=1e-9, weight_decay=args.wdecay
+    )
+
+if args.cuda:
+    model.cuda(args.device)
+
+if args.parallel:
+    model = torch.nn.DataParallel(model)
+    model.init_hidden = model.module.init_hidden
+
+criterion = nn.CrossEntropyLoss()
 
 ###############################################################################
 # Logging
@@ -178,64 +236,6 @@ fh = logging.FileHandler(log_path)
 fh.setLevel(logging.INFO)
 fh.setFormatter(file_formatter)
 logger.addHandler(fh)
-
-
-###############################################################################
-# Load data
-###############################################################################
-corpus = data.Corpus(args.data)
-
-eval_batch_size = 10
-test_batch_size = 1
-train_data = batchify(corpus.train, args.batch_size, args)
-val_data = batchify(corpus.valid, eval_batch_size, args)
-test_data = batchify(corpus.test, test_batch_size, args)
-
-###############################################################################
-# Build the model
-###############################################################################
-args.ntokens = ntokens = len(corpus.dictionary)
-
-if args.resume:
-
-    def load_params():
-        print('Loading saved model (%s)...' % args.resume[0], end='')
-        global model, optimizer
-
-        model, optimizer = torch.load(args.resume[0])
-
-        if model.rnn_type == 'LSTM':
-            model.rnns.flatten_parameters()
-
-        for d in ['e', 'i', 'h', 'a', 'o']:
-            drp = getattr(args, 'dropout' + d)
-            setattr(model, 'dropout' + d, drp)
-
-        if model.rnn_type == 'ALSTM':
-            setattr(model.rnns, 'dropout_alstm', args.dropouth)
-            setattr(model.rnns, 'dropout_adapt', args.dropouta)
-
-        optimizer.param_groups[0]['lr'] = args.lr
-        optimizer.param_groups[0]['weight_decay'] = args.wdecay
-        print('done')
-
-    load_params()
-
-else:
-    model = model.get_model(args)
-    optimizer = torch.optim.Adam(
-        model.parameters(), lr=args.lr, betas=(0., 0.999),
-        eps=1e-9, weight_decay=args.wdecay
-    )
-
-if args.cuda:
-    model.cuda(args.device)
-
-if args.parallel:
-    model = torch.nn.DataParallel(model)
-    model.init_hidden = model.module.init_hidden
-
-criterion = nn.CrossEntropyLoss()
 
 ###############################################################################
 # Training code
