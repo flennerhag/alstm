@@ -138,6 +138,8 @@ class aLSTM(nn.Module):
         nlayers (int): number of layers (default: 1)
         dropout_alstm (int): drop probability for aLSTM hidden state (optional)
         dropout_adapt (int): drop probability for adaptive latent variable (optional)
+        dropout_intra (bool): apply dropout intra-layer, in addition to inter-layer,
+            on the aLSTM hidden state (default: True)
         batch_first (int): whether batches are along first dimension (default: False)
         bias (bool): whether to use a bias (default: True)
 
@@ -151,7 +153,7 @@ class aLSTM(nn.Module):
     """
 
     def __init__(self, input_size, hidden_size, adapt_size, output_size=None,
-                 nlayers=1, dropout_alstm=None, dropout_adapt=None,
+                 nlayers=1, dropout_alstm=None, dropout_adapt=None, dropout_intra=True,
                  batch_first=False, bias=True):
         super(aLSTM, self).__init__()
         output_size = output_size if output_size is not None else hidden_size
@@ -162,6 +164,7 @@ class aLSTM(nn.Module):
         self.nlayers = nlayers
         self.dropout_alstm = dropout_alstm
         self.dropout_adapt = dropout_adapt
+        self.dropout_intra = dropout_intra
         self.batch_first = batch_first
         self.bias = bias
 
@@ -194,7 +197,7 @@ class aLSTM(nn.Module):
         Args:
             input (Tensor): Batch of inputs [batch_size, max_seq_len, input_size]
             hidden (Tensor): Two lists of hidden state tuples (optional) [batch_size, hidden_size]
-            return_all (Bool): whether to return also outputs (incl. non-dropped) from all layers
+            return_all (bool): whether to return also outputs (incl. non-dropped) from all layers
 
         Returns:
             output (Tensor): Batch of sequences [batch_size, max_seq_len, output_size]
@@ -232,20 +235,18 @@ class aLSTM(nn.Module):
                 ahx = dropout_adapt(ahx, l)
                 ahe = elyr(ahx)
 
-                fhx_nd, fhc = flyr(x, (fhx, fhc), ahe)
+                fhx, fhc = flyr(x, (fhx, fhc), ahe)
                 if l == self.nlayers - 1:
-                    output.append(fhx_nd)
+                    output.append(fhx)
 
-                fhx = dropout_alstm(fhx_nd, l)
+                x = dropout_alstm(fhx, l)
 
                 if return_all:
-                    output_all_raw.append(fhx_nd)
-                    output_all.append(fhx)
+                    output_all_raw.append(fhx)
+                    output_all.append(x)
 
                 adapt_hidden[l] = [ahx, ahc]
-                alstm_hidden[l] = [fhx, fhc]
-
-                x = fhx
+                alstm_hidden[l] = [x if self.dropout_intra else fhx, fhc]
             ###
         ###
         hidden = (adapt_hidden, alstm_hidden)
