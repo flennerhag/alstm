@@ -14,12 +14,13 @@ import model as model
 
 from utils import batchify, get_batch, repackage_hidden, ppl
 
+
 ###############################################################################
 parser = argparse.ArgumentParser(
     description='PyTorch Language Model Training Script'
 )
-
 ###############################################################################
+
 parser.add_argument(
     '--model', type=str, default='ALSTM', help='type of recurrent net'
 )
@@ -108,7 +109,6 @@ parser.add_argument(
     '--data', type=str, default='./data/penn', help='path to data root directory'
 )
 
-
 args = parser.parse_args()
 
 if args.resume:
@@ -125,6 +125,64 @@ if torch.cuda.is_available():
     else:
         torch.cuda.set_device(args.device)
         torch.cuda.manual_seed(args.seed)
+
+###############################################################################
+# Data
+###############################################################################
+corpus = data.Corpus(args.data)
+
+eval_batch_size = 10
+test_batch_size = 1
+train_data = batchify(corpus.train, args.batch_size, args)
+val_data = batchify(corpus.valid, eval_batch_size, args)
+test_data = batchify(corpus.test, test_batch_size, args)
+
+###############################################################################
+# Model
+###############################################################################
+
+args.ntokens = ntokens = len(corpus.dictionary)
+
+if args.resume:
+
+    def load_params():
+        print('Loading saved model (%s)...' % args.resume[0], end='')
+        global model, optimizer
+
+        model, optimizer = torch.load(args.resume[0])
+
+        if model.rnn_type == 'LSTM':
+            model.rnns.flatten_parameters()
+
+        for d in ['e', 'i', 'h', 'a', 'o']:
+            drp = getattr(args, 'dropout' + d)
+            setattr(model, 'dropout' + d, drp)
+
+        if model.rnn_type == 'ALSTM':
+            setattr(model.rnns, 'dropout_alstm', args.dropouth)
+            setattr(model.rnns, 'dropout_adapt', args.dropouta)
+
+        optimizer.param_groups[0]['lr'] = args.lr
+        optimizer.param_groups[0]['weight_decay'] = args.wdecay
+        print('done')
+
+    load_params()
+
+else:
+    model = model.get_model(args)
+    optimizer = torch.optim.Adam(
+        model.parameters(), lr=args.lr, betas=(0., 0.999),
+        eps=1e-9, weight_decay=args.wdecay
+    )
+
+if args.cuda:
+    model.cuda(args.device)
+
+if args.parallel:
+    model = torch.nn.DataParallel(model)
+    model.init_hidden = model.module.init_hidden
+
+criterion = nn.CrossEntropyLoss()
 
 ###############################################################################
 # Logging
@@ -178,64 +236,6 @@ fh = logging.FileHandler(log_path)
 fh.setLevel(logging.INFO)
 fh.setFormatter(file_formatter)
 logger.addHandler(fh)
-
-
-###############################################################################
-# Load data
-###############################################################################
-corpus = data.Corpus(args.data)
-
-eval_batch_size = 10
-test_batch_size = 1
-train_data = batchify(corpus.train, args.batch_size, args)
-val_data = batchify(corpus.valid, eval_batch_size, args)
-test_data = batchify(corpus.test, test_batch_size, args)
-
-###############################################################################
-# Build the model
-###############################################################################
-args.ntokens = ntokens = len(corpus.dictionary)
-
-if args.resume:
-
-    def load_params():
-        print('Loading saved model (%s)...' % args.resume[0], end='')
-        global model, optimizer
-
-        model, optimizer = torch.load(args.resume[0])
-
-        if model.rnn_type == 'LSTM':
-            model.rnns.flatten_parameters()
-
-        for d in ['e', 'i', 'h', 'a', 'o']:
-            drp = getattr(args, 'dropout' + d)
-            setattr(model, 'dropout' + d, drp)
-
-        if model.rnn_type == 'ALSTM':
-            setattr(model.rnns, 'dropout_alstm', args.dropouth)
-            setattr(model.rnns, 'dropout_adapt', args.dropouta)
-
-        optimizer.param_groups[0]['lr'] = args.lr
-        optimizer.param_groups[0]['weight_decay'] = args.wdecay
-        print('done')
-
-    load_params()
-
-else:
-    model = model.get_model(args)
-    optimizer = torch.optim.Adam(
-        model.parameters(), lr=args.lr, betas=(0., 0.999),
-        eps=1e-9, weight_decay=args.wdecay
-    )
-
-if args.cuda:
-    model.cuda(args.device)
-
-if args.parallel:
-    model = torch.nn.DataParallel(model)
-    model.init_hidden = model.module.init_hidden
-
-criterion = nn.CrossEntropyLoss()
 
 ###############################################################################
 # Training code
@@ -345,34 +345,32 @@ def train():
 
 
 if __name__ == '__main__':
+    try:
+        total_params = sum(
+            x.size()[0] * x.size()[1] if len(x.size()) > 1 else
+            x.size()[0] for x in model.parameters())
+        args.params = total_params
+        logger.info(args)
 
-    total_params = sum(
-        x.size()[0] * x.size()[1] if len(x.size()) > 1 else
-        x.size()[0] for x in model.parameters())
-    args.params = total_params
-    logger.info(args)
+        lr = args.lr
+        stored_loss = np.inf if not args.resume else args.resume[2]
+        epochs = range(1, args.epochs + 1) if not args.resume else range(1 + args.resume[1], 1 + args.epochs - args.resume[1])
+        for epoch in epochs:
+            epoch_start_time = time.time()
+            train()
+            val_loss = evaluate(model, val_data, eval_batch_size)
+            logger.info(
+                'VAL | epoch {:3d} | time: {:5.2f}s | loss {:5.2f} | ppl {:8.2f}'.format(
+                    epoch, (time.time() - epoch_start_time), val_loss, ppl(val_loss))
+            )
+            if val_loss < stored_loss:
+                with open(ckpt_path, 'wb') as f:
+                    torch.save([model, optimizer], f)
+                    stored_loss = val_loss
 
-    lr = args.lr
-    stored_loss = np.inf if not args.resume else args.resume[2]
-    epochs = range(1, args.epochs + 1) if not args.resume else range(1 + args.resume[1], 1 + args.resume[1] + args.epochs)
-    strikes = 0
-    for epoch in epochs:
-        epoch_start_time = time.time()
-        train()
-        val_loss = evaluate(model, val_data, eval_batch_size)
-        logger.info(
-            'VAL | epoch {:3d} | time: {:5.2f}s | loss {:5.2f} '
-            '| ppl {:8.2f}'.format(
-                epoch, (time.time() - epoch_start_time), val_loss,
-                ppl(val_loss)))
-
-        if val_loss < stored_loss:
-            with open(ckpt_path, 'wb') as f:
-                torch.save([model, optimizer], f)
-                stored_loss = val_loss
-
-        if args.cut_steps and epoch % args.cut_steps[0] == 0:
-            args.cut_steps.pop(0)
-            optimizer.param_groups[0]['lr'] /= args.cut_rate
-
+            if args.cut_steps and epoch % args.cut_steps[0] == 0:
+                args.cut_steps.pop(0)
+                optimizer.param_groups[0]['lr'] /= args.cut_rate
+    except KeyboardInterrupt as excp:
+        print("Training stopped.")
     test()
