@@ -1,20 +1,19 @@
 # Adaptive LSTM (aLSTM)
 
-[PyTorch](https://pytorch.org/) implementation of the adaptive LSTM ([https://arxiv.org/abs/1805.08574](https://arxiv.org/abs/1805.08574)). 
+[PyTorch](https://pytorch.org/) implementation of the adaptive LSTM ([https://arxiv.org/abs/1805.08574](https://arxiv.org/abs/1805.08574)), 
+an extension of the standard LSTM that increases model flexibility through adaptive parameterization.
 
-aLSTM is an extension of the standard LSTM that implements adaptive parameterization. 
-Adaptive parameterization increases model flexibility given a parameter budget, allowing
-more flexible and statistically efficient models. The aLSTM converges faster
-than the LSTM and reaches better generalizing performance. It is also very stable; no need to
-use gradient clipping, even for sequences of up to thousands of terms. 
- 
+The aLSTM converges faster than the LSTM with superior generalizing performance. It is also stable; 
+no need to use gradient clipping, even for sequences of up to thousands of terms. For more info, see the
+paper or the informal [write up](http://flennerhag.com/2018-06-09-breaking-activation-function-bottleneck/). 
+
 If you use this code or our results in your research, please cite
 
 ```
 @article{Flennerhag:2018alstm,
   title   = {{Breaking the Activation Function Bottleneck through Adaptive Parameterization}},
   author  = {Flennerhag, Sebastian and Hujun, Yin and Keane, John and Elliot, Mark},
-  journal = {{arXiv preprint, arXiv:1805.08574}},
+  journal = {{arXiv preprint arXiv:1805.08574}},
   year    = {2018}
 }
 ```
